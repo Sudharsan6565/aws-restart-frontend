@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../utils/api";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
+import { useAuth, useUser } from "@clerk/clerk-react";
 
 export default function ChatWindow() {
   const [messages, setMessages] = useState([]);
@@ -11,6 +12,10 @@ export default function ChatWindow() {
   const [uploadedFile, setUploadedFile] = useState(null);
 
   const chatRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const { getToken } = useAuth();
+  const { user } = useUser();
 
   const scrollToBottom = () => {
     if (chatRef.current) {
@@ -23,20 +28,19 @@ export default function ChatWindow() {
   }, [messages]);
 
   const sendMessage = async () => {
-    const trimmed = input.trim();
-    if (!trimmed) return;
+    if (!input.trim()) return;
+    const userMsg = input.trim();
 
-    const userMsg = { role: "user", content: trimmed };
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setInput("");
     setLoading(true);
 
     try {
-      const res = await apiFetch("/chat", "POST", { message: trimmed });
-      const botMsg = { role: "bot", content: res.response };
-      setMessages((prev) => [...prev, botMsg]);
+      const token = await getToken({ template: "backend" });
+      const res = await apiFetch("/chat", "POST", { message: userMsg }, token);
+      setMessages((prev) => [...prev, { role: "bot", content: res.response }]);
     } catch (err) {
-      toast.error("Chat error: " + err.message);
+      toast.error("Chat failed: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -74,15 +78,19 @@ export default function ChatWindow() {
   };
 
   return (
-    <div className="flex flex-col h-full p-4">
+    <div className="flex flex-col h-full max-h-[90vh] px-4 py-2">
+      <div className="text-sm text-muted-foreground mb-2">
+        Logged in as: <span className="font-medium">{user?.primaryEmailAddress?.emailAddress}</span>
+      </div>
+
       <div
         ref={chatRef}
-        className="flex-1 overflow-y-auto space-y-4 bg-neutral-100 dark:bg-neutral-900 rounded-xl p-4 border border-neutral-200 dark:border-neutral-800 shadow-sm"
+        className="flex-1 overflow-y-auto space-y-4 p-2 bg-neutral-100 dark:bg-neutral-900 rounded-lg"
       >
         {messages.map((msg, idx) => (
           <div
             key={idx}
-            className={`rounded-xl px-4 py-3 max-w-[80%] text-sm leading-relaxed whitespace-pre-wrap ${
+            className={`rounded-xl p-3 max-w-[80%] whitespace-pre-wrap ${
               msg.role === "user"
                 ? "self-end bg-[#0F172A] text-white"
                 : "self-start bg-neutral-200 dark:bg-neutral-800 text-black dark:text-white"
@@ -108,19 +116,40 @@ export default function ChatWindow() {
       <div className="mt-4 flex flex-col md:flex-row gap-2 w-full">
         <textarea
           rows={1}
+          className="flex-1 resize-none rounded-lg border px-3 py-2 bg-white dark:bg-neutral-800 text-sm"
+          placeholder="Type your message..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Type your message..."
-          className="flex-1 resize-none rounded-lg border px-3 py-2 text-sm bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-700 focus:outline-none"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              sendMessage();
+            }
+          }}
         />
-        <button
-          onClick={sendMessage}
-          disabled={loading}
-          className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 text-sm disabled:opacity-50"
-        >
-          Send
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => fileInputRef.current.click()}
+            disabled={uploading}
+            className="bg-white dark:bg-neutral-800 border px-4 py-2 rounded-lg text-sm hover:bg-neutral-100 dark:hover:bg-neutral-700"
+          >
+            {uploading ? "Uploading..." : "Upload"}
+          </button>
+          <button
+            onClick={sendMessage}
+            disabled={loading}
+            className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 text-sm"
+          >
+            Send
+          </button>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          onChange={handleFileUpload}
+          className="hidden"
+          accept=".pdf,.docx,.csv,.png,.jpg,.jpeg"
+        />
       </div>
     </div>
   );
