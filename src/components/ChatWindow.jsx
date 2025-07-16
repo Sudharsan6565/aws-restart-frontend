@@ -7,6 +7,9 @@ export default function ChatWindow() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState(null);
+
   const chatRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -39,10 +42,34 @@ export default function ChatWindow() {
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadedFile(file);
+    setUploading(true);
+
+    try {
+      const token = await getToken({ template: "backend" });
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Upload failed");
+
+      toast.success("File uploaded & processed.");
+      setMessages((prev) => [...prev, { role: "bot", content: json.bot_response }]);
+    } catch (err) {
+      toast.error("Upload failed: " + err.message);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -57,8 +84,8 @@ export default function ChatWindow() {
             key={idx}
             className={`rounded-xl px-4 py-3 max-w-[80%] text-sm leading-relaxed whitespace-pre-wrap ${
               msg.role === "user"
-                ? "self-end bg-blue-600 text-white"
-                : "self-start bg-white dark:bg-neutral-800 text-black dark:text-white"
+                ? "self-end bg-[#0F172A] text-white"
+                : "self-start bg-neutral-200 dark:bg-neutral-800 text-black dark:text-white"
             }`}
           >
             <ReactMarkdown>{msg.content}</ReactMarkdown>
@@ -72,7 +99,13 @@ export default function ChatWindow() {
         )}
       </div>
 
-      <div className="mt-4 flex gap-2">
+      {uploadedFile && (
+        <div className="mt-2 text-sm text-muted-foreground">
+          ✅ File attached: <span className="font-medium">{uploadedFile.name}</span>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-col md:flex-row gap-2 w-full">
         <textarea
           rows={1}
           value={input}
